@@ -8,6 +8,7 @@ import { FileDownloadError }                      from "../lib/errors"
 
 
 export interface DocumentReferenceHandlerOptions {
+    downloadAttachments: boolean
     inlineAttachments: number
     inlineAttachmentTypes: string[]
     pdfToText: boolean
@@ -92,6 +93,28 @@ export default class DocumentReferenceHandler extends Transform
         }
     }
 
+    private async downloadAttachmentWithRetries(attachment: fhir4.Attachment): Promise<{ contentType: string; data: Buffer }> {
+        for (const i of [1, 2, 3, 4, 5]) {
+            try {
+                return await this.downloadAttachment(attachment)
+            }
+            catch (e: any) {
+                if (err instanceof FileDownloadError) {
+                  const urlFragment = attachment.url.replace(this.options.baseUrl, "")
+                  console.log("MIKE: error " + err.code + " for " + urlFragment);
+                  if (err.code === 500) {
+                    throw e // don't bother retrying generic 500 errors, that's usually a reliable server error
+                  } else if (i < 5) {
+                    await wait(5000)
+                  }
+                } else {
+                  console.log("MIKE: unknown error happened: " + err)
+                  throw e // don't bother retrying oddball errors
+                }
+            }
+        }
+    }
+
     private async inlineAttachmentData(node: fhir4.Attachment, data: Buffer) {
         if (node.contentType == "application/pdf" && this.options.pdfToText) {
             data = await pdfToText(data);
@@ -112,13 +135,27 @@ export default class DocumentReferenceHandler extends Transform
                 continue;
             }
 
-            const response = await this.downloadAttachment(attachment);
-            
+            const maybeInline = !attachment.contentType || canPutContentTypeInline(attachment.contentType)
+            const shouldDownload = this.options.downloadAttachments === true
+            const shouldFetch = maybeInline || shouldDownload
+            if (!shouldFetch) {
+                continue
+            }
+
+            let response
+            try {
+                response = await this.downloadAttachmentWithRetries(attachment)
+            } catch (err) {
+                continue
+            }
+
+            // Re-check if we can inline this attachment, now that we know the size of the data
+            // and the server-provided content type.
             if (this.canPutAttachmentInline(response.data, response.contentType)) {
                 await this.inlineAttachmentData(attachment, response.data);
             }
             
-            else {
+            else if (shouldDownload) {
                 const fileName = Date.now() + "-" + jose.util.randomBytes(6).toString("hex") + extname(attachment.url);
                 await this.options.save(
                     fileName,
@@ -127,10 +164,26 @@ export default class DocumentReferenceHandler extends Transform
                 )
                 attachment.url = `./attachments/${fileName}`
             }
+            else {
+                continue
+            }
             this.emit("attachment")
         }
 
         return resource;
+    }
+
+    canPutContentTypeInline(contentType: string): boolean
+    {
+        if (!contentType) {
+            return false
+        }
+
+        if (!this.options.inlineAttachmentTypes.find(m => contentType.startsWith(m))) {
+            return false
+        }
+
+        return true
     }
 
     canPutAttachmentInline(data: Buffer, contentType: string): boolean
@@ -139,11 +192,7 @@ export default class DocumentReferenceHandler extends Transform
             return false
         }
 
-        if (!contentType) {
-            return false
-        }
-
-        if (!this.options.inlineAttachmentTypes.find(m => contentType.startsWith(m))) {
+        if (!canPutContentTypeInline(contentType)) {
             return false
         }
 

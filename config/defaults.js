@@ -233,7 +233,8 @@
      * If an attachment can be inlined (based on its size and the value of
      * the `inlineDocRefAttachmentsSmallerThan` option), then its mime type
      * will be compared with this list. Only files of listed types will be
-     * inlined and the rest will be downloaded into "attachment" subfolder.
+     * inlined and the rest will be downloaded into "attachment" subfolder
+     * (if `downloadAttachments` is also enabled).
      */
     inlineDocRefAttachmentTypes: ["text/plain", "application/pdf"],
 

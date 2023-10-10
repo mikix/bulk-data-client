@@ -724,7 +724,9 @@ class BulkDataClient extends EventEmitter
         // ---------------------------------------------------------------------
         // Download attachments
         // ---------------------------------------------------------------------
-        if (this.options.downloadAttachments !== false) {
+        const downloadingEnabled = this.options.downloadAttachments === true;
+        const inliningEnabled = this.options.inlineDocRefAttachmentsSmallerThan > 0;
+        if (downloadingEnabled || inliningEnabled) {
 
             const docRefProcessor = new DocumentReferenceHandler({
                 request: (options: OptionsOfUnknownResponseBody) => {
@@ -742,6 +744,7 @@ class BulkDataClient extends EventEmitter
                         resourceCount: null
                     })
                 },
+                downloadAttachments  : this.options.downloadAttachments,
                 inlineAttachments    : this.options.inlineDocRefAttachmentsSmallerThan,
                 inlineAttachmentTypes: this.options.inlineDocRefAttachmentTypes,
                 pdfToText            : this.options.pdfToText,
