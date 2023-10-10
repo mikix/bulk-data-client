@@ -103,8 +103,9 @@ export default class DocumentReferenceHandler extends Transform
                 if (err instanceof FileDownloadError) {
                   const urlFragment = attachment.url && attachment.url.replace(this.options.baseUrl, "")
                   console.log("MIKE: error " + err.code + " for " + urlFragment);
-                  if (err.code === 500) {
-                    throw err // don't bother retrying generic 500 errors, that's usually a reliable server error
+                  // don't bother retrying generic 500 errors, that's usually a reliable server error
+                  if (err.code === 500 || err.code === 422) {
+                    throw err
                   } else {
                     await wait(5000)
                   }
