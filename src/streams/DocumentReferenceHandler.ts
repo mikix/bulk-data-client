@@ -5,6 +5,7 @@ import jose                                       from "node-jose"
 import { OptionsOfUnknownResponseBody, Response } from "got/dist/source"
 import PDF                                        from "../lib/PDF"
 import { FileDownloadError }                      from "../lib/errors"
+import { wait }                                   from "../lib/utils"
 
 
 export interface DocumentReferenceHandlerOptions {
@@ -94,25 +95,26 @@ export default class DocumentReferenceHandler extends Transform
     }
 
     private async downloadAttachmentWithRetries(attachment: fhir4.Attachment): Promise<{ contentType: string; data: Buffer }> {
-        for (const i of [1, 2, 3, 4, 5]) {
+        for (const i of [1, 2, 3, 4]) {
             try {
                 return await this.downloadAttachment(attachment)
             }
-            catch (e: any) {
+            catch (err: any) {
                 if (err instanceof FileDownloadError) {
-                  const urlFragment = attachment.url.replace(this.options.baseUrl, "")
+                  const urlFragment = attachment.url && attachment.url.replace(this.options.baseUrl, "")
                   console.log("MIKE: error " + err.code + " for " + urlFragment);
                   if (err.code === 500) {
-                    throw e // don't bother retrying generic 500 errors, that's usually a reliable server error
-                  } else if (i < 5) {
+                    throw err // don't bother retrying generic 500 errors, that's usually a reliable server error
+                  } else {
                     await wait(5000)
                   }
                 } else {
                   console.log("MIKE: unknown error happened: " + err)
-                  throw e // don't bother retrying oddball errors
+                  throw err // don't bother retrying oddball errors
                 }
             }
         }
+        return await this.downloadAttachment(attachment)
     }
 
     private async inlineAttachmentData(node: fhir4.Attachment, data: Buffer) {
@@ -135,7 +137,7 @@ export default class DocumentReferenceHandler extends Transform
                 continue;
             }
 
-            const maybeInline = !attachment.contentType || canPutContentTypeInline(attachment.contentType)
+            const maybeInline = !attachment.contentType || this.canPutContentTypeInline(attachment.contentType)
             const shouldDownload = this.options.downloadAttachments === true
             const shouldFetch = maybeInline || shouldDownload
             if (!shouldFetch) {
@@ -192,7 +194,7 @@ export default class DocumentReferenceHandler extends Transform
             return false
         }
 
-        if (!canPutContentTypeInline(contentType)) {
+        if (!this.canPutContentTypeInline(contentType)) {
             return false
         }
 
